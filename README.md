@@ -28,7 +28,7 @@ Sistema avançado para detecção automática de **comportamentos violentos** e 
 ### Pré-requisitos
 - Python 3.10+
 - NVIDIA GPU (recomendado) + CUDA 12.1
-- Acesso ao [Violence Harassment Dataset](https://example.com/dataset) (solicitar acesso)
+- Acesso ao [Violence Harassment Dataset](http://crcv.ucf.edu/projects/real-world/)
 
 ### Instalação via Conda
 ```bash
