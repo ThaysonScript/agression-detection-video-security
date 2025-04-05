@@ -1,29 +1,62 @@
-import os, random
-from shutil import copy2
+import cv2
+import os
 
-random.seed(42)
-base_path = "/caminho/para/dataset"
-output_path = "/caminho/para/projeto/data/raw"
+def extract_frames(video_path, output_folder, frame_rate=1):
+    os.makedirs(output_folder, exist_ok=True)
+    
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"Erro ao abrir o vídeo: {video_path}")
+        return
 
-def amostrar_e_copiar(pasta_origem, pasta_destino, total=150):
-    videos = os.listdir(pasta_origem)
-    amostrados = random.sample(videos, total)
-    os.makedirs(pasta_destino, exist_ok=True)
-    for video in amostrados:
-        copy2(os.path.join(pasta_origem, video), os.path.join(pasta_destino, video))
-    return amostrados
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        print(f"FPS inválido ou não detectado no vídeo: {video_path}")
+        cap.release()
+        return
 
+    target_interval = 1.0 / frame_rate
+    next_capture = 0.0
+    saved_count = 0
 
-def dividir_e_salvar(lista, nome, destino):
-    random.shuffle(lista)
-    train, val, test = lista[:100], lista[100:120], lista[120:]
-    for nome_arquivo, conjunto in zip([f"{nome}_train.txt", f"{nome}_val.txt", f"{nome}_test.txt"], [train, val, test]):
-        with open(os.path.join(destino, nome_arquivo), "w") as f:
-            f.writelines([linha + "\n" for linha in conjunto])
-            
-            
-violence = amostrar_e_copiar(f"{base_path}/Violence", f"{output_path}/Violence", 150)
-nonviolence = amostrar_e_copiar(f"{base_path}/NonViolence", f"{output_path}/NonViolence", 150)
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-dividir_e_salvar(violence, "violence", "./data/splits")
-dividir_e_salvar(nonviolence, "nonviolence", "./data/splits")
+        frame_pos = cap.get(cv2.CAP_PROP_POS_FRAMES) - 1
+        current_time = frame_pos / fps
+
+        if current_time >= next_capture:
+            frame_path = os.path.join(output_folder, f"frame_{saved_count:04d}.png")
+            cv2.imwrite(frame_path, frame)
+            saved_count += 1
+            next_capture += target_interval
+
+    cap.release()
+    print(f"{saved_count} frames salvos em {output_folder}")
+
+def process_videos_folder(input_folder, output_base_folder, frame_rate=1):
+    # Lista todos os arquivos na pasta de entrada
+    video_files = [f for f in os.listdir(input_folder) 
+                  if f.lower().endswith(('.mp4', '.avi', '.mov', '.mkv'))]
+    
+    if not video_files:
+        print(f"Nenhum vídeo encontrado em: {input_folder}")
+        return
+
+    # Processa cada vídeo
+    for video_file in video_files:
+        video_name = os.path.splitext(video_file)[0]
+        video_path = os.path.join(input_folder, video_file)
+        output_folder = os.path.join(output_base_folder, video_name)
+        
+        print(f"\nProcessando: {video_file}")
+        extract_frames(video_path, output_folder, frame_rate)
+
+# Exemplo de uso:
+input_folder = "/content/drive/MyDrive/Testing_Normal_Videos_Anomaly"
+output_base_folder = "/content/extracted_frames"
+frame_rate = 1  # Altere para a taxa desejada
+
+process_videos_folder(input_folder, output_base_folder, frame_rate)
