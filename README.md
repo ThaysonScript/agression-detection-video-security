@@ -48,13 +48,28 @@ wget https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8x-pose
 
 ### Estrutura do Dataset
 ```text
-data/
-├── train/
-│   ├── aggression/    # 2,300 vídeos
-│   ├── harassment/    # 1,850 vídeos 
-│   └── normal/        # 5,000 vídeos
-└── test/
-    └── ...            # mesma estrutura
+agression-detection-video-security/
+├── data/
+│   ├── raw/             # vídeos originais
+│   ├── splits/          # train.txt, val.txt, test.txt
+│   ├── keypoints/       # keypoints extraídos por vídeo
+│   └── sequences/       # vetores temporais prontos
+├── models/              # pesos treinados, checkpoints
+├── outputs/
+│   ├── logs/            # logs de treino
+│   ├── metrics/         # .csv com resultados
+│   └── plots/           # gráficos gerados
+├── src/
+│   ├── data/            # loaders, splitters
+│   ├── features/        # extração e vetorização
+│   ├── models/          # arquitetura RNN
+│   ├── training/        # train.py, val.py
+│   └── utils/           # métricas, visualização
+├── notebooks/           # exploração e experimentos
+├── interface/           # app Streamlit
+├── mlruns/              # diretório do MLflow
+├── requirements.txt
+└── README.md
 ```
 
 ### Treinamento do Modelo
