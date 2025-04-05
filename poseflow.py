@@ -1,126 +1,111 @@
-import os
 import numpy as np
 from pathlib import Path
+import json
 from tqdm import tqdm
 from joblib import Parallel, delayed
-import json
 
-class FeatureExtractor:
+class KeypointProcessor:
     def __init__(self, frame_size=(264, 264)):
         self.frame_size = np.array(frame_size)
         self.joint_pairs = [
-            (5, 6),    # Ombros
-            (11, 12),  # Quadris
-            (7, 9),    # Braço esquerdo
-            (8, 10),   # Braço direito
-            (13, 15),  # Perna esquerda
-            (14, 16)   # Perna direita
+            (5, 6), (11, 12), (7, 9), (8, 10),  # Ombros, quadris, braços
+            (13, 15), (14, 16)                  # Pernas
         ]
         self.angle_triplets = [
-            (5, 7, 9),  # Braço esquerdo
-            (6, 8, 10), # Braço direito
-            (11, 13, 15), # Perna esquerda
-            (12, 14, 16)  # Perna direita
+            (5, 7, 9), (6, 8, 10),              # Ângulos dos braços
+            (11, 13, 15), (12, 14, 16)          # Ângulos das pernas
         ]
 
-    def _normalize_coords(self, keypoints):
-        return keypoints[:, :2] / self.frame_size
-
-    def _calculate_distances(self, keypoints):
-        return [np.linalg.norm(keypoints[i] - keypoints[j]) 
-                for i, j in self.joint_pairs]
-
-    def _calculate_angles(self, keypoints):
-        angles = []
+    def process_frame(self, kps):
+        """Processa um frame e retorna features normalizadas"""
+        # Normalização
+        kps = kps.copy()
+        kps[:, 0] /= self.frame_size[0]  # X
+        kps[:, 1] /= self.frame_size[1]  # Y
+        
+        # Features básicas
+        features = {
+            'coords': kps[:, :2].flatten(),  # 34D (17 keypoints * 2)
+            'distances': [np.linalg.norm(kps[i] - kps[j]) 
+                         for i, j in self.joint_pairs],  # 6D
+            'angles': []
+        }
+        
+        # Cálculo de ângulos
         for a, b, c in self.angle_triplets:
-            ba = keypoints[a] - keypoints[b]
-            bc = keypoints[c] - keypoints[b]
+            ba = kps[a] - kps[b]
+            bc = kps[c] - kps[b]
             cosine = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc) + 1e-8)
-            angles.append(np.arccos(cosine))
-        return angles
+            features['angles'].append(np.arccos(cosine))  # 4D
+        
+        return np.concatenate([
+            features['coords'],
+            features['distances'],
+            features['angles']
+        ])
 
-    def extract_features(self, current_kps, prev_kps=None):
-        features = {}
-        
-        # Coordenadas normalizadas
-        features['coords'] = self._normalize_coords(current_kps).flatten()
-        
-        # Distâncias relativas
-        features['distances'] = self._calculate_distances(current_kps)
-        
-        # Ângulos das articulações
-        features['angles'] = self._calculate_angles(current_kps)
-        
-        # Movimento temporal
-        if prev_kps is not None:
-            features['velocity'] = (current_kps[:, :2] - prev_kps[:, :2]).flatten()
-            features['acceleration'] = features['velocity'] - self.prev_velocity
-            
-        return np.concatenate([v for v in features.values()])
-
-def process_single_video(video_path, output_dir, seq_length=30):
-    extractor = FeatureExtractor()
-    frames = sorted(Path(video_path).glob('*.npy'))
+def process_video(video_dir, output_base, seq_length=10):
+    processor = KeypointProcessor()
+    frames = sorted(video_dir.glob("*.npy"))
     
-    all_features = []
-    prev_kps = None
-    
-    for frame_file in frames:
+    # Processa todos os frames válidos
+    features = []
+    for frame_path in frames:
         try:
-            kps = np.load(frame_file)
-            if kps.shape != (17, 3):
-                continue
-                
-            features = extractor.extract_features(kps, prev_kps)
-            all_features.append(features)
-            prev_kps = kps
+            kps = np.load(frame_path)
+            if kps.shape == (17, 3):  # Verifica formato
+                features.append(processor.process_frame(kps))
         except Exception as e:
-            print(f"Error processing {frame_file}: {str(e)}")
+            print(f"Erro no frame {frame_path.name}: {str(e)}")
     
-    # Cria sequências temporais
+    # Gera sequências temporais
     sequences = []
-    for i in range(len(all_features) - seq_length + 1):
-        sequences.append(all_features[i:i+seq_length])
+    for i in range(len(features) - seq_length + 1):
+        sequences.append(features[i:i+seq_length])
     
-    # Salva resultados
-    video_name = video_path.name
-    output_path = output_dir / video_name
-    output_path.mkdir(parents=True, exist_ok=True)
+    # Cria pasta de saída
+    output_dir = output_base / video_dir.name
+    output_dir.mkdir(parents=True, exist_ok=True)
     
-    for idx, seq in enumerate(sequences):
-        np.save(output_path / f"seq_{idx:04d}.npy", seq)
+    # Salva as sequências
+    for i, seq in enumerate(sequences):
+        np.save(output_dir / f"seq_{i:04d}.npy", np.array(seq))
     
     return len(sequences)
 
 def main():
-    config = {
-        'input_dir': Path("/content/drive/MyDrive/keypoints_frames_processados"),
-        'output_dir': Path("/content/drive/MyDrive/feature_vectors"),
-        'sequence_length': 30,
-        'n_jobs': -1  # Usa todos os cores
-    }
+    # Configurações (ajuste esses caminhos)
+    input_dir = Path("/content/drive/MyDrive/keypoints_frames_processados/anomaly_frames_pt_1/abuse/1_frame_per_second_extract_abuse_anomaly_keypoints")
+    output_dir = Path("/content/features_processed")
+    seq_length = 10  # Janela temporal (em frames)
     
-    # Encontra todos os vídeos
-    video_paths = [p for p in config['input_dir'].rglob('*') if p.is_dir() and 'Abuse' in p.name]
+    # Encontra todos os diretórios de vídeo
+    video_dirs = [d for d in input_dir.iterdir() if d.is_dir()]
+    print(f"🔍 Encontrados {len(video_dirs)} vídeos para processar")
     
     # Processamento paralelo
-    results = Parallel(n_jobs=config['n_jobs'])(
-        delayed(process_single_video)(
-            video_path,
-            config['output_dir'],
-            config['sequence_length']
-        ) for video_path in tqdm(video_paths, desc="Processing Videos")
+    results = Parallel(n_jobs=4)(
+        delayed(process_video)(video_dir, output_dir, seq_length)
+        for video_dir in tqdm(video_dirs, desc="Processando vídeos")
     )
     
-    # Salva metadados
+    # Gera relatório
     metadata = {
-        'feature_dim': 17*2 + len(FeatureExtractor().joint_pairs) + len(FeatureExtractor().angle_triplets),
-        'total_sequences': sum(results),
-        'config': config
+        "total_videos": len(video_dirs),
+        "total_sequences": sum(results),
+        "feature_dim": 34 + 6 + 4,  # coords + distances + angles
+        "frame_size": [264, 264],
+        "sequence_length": seq_length
     }
     
-    with open(config['output_dir'] / 'metadata.json', 'w') as f:
+    with open(output_dir / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
+    
+    print(f"\n✅ Processamento concluído!")
+    print(f"   - Vídeos processados: {len(video_dirs)}")
+    print(f"   - Sequências geradas: {sum(results)}")
+    print(f"   - Features por frame: {metadata['feature_dim']}D")
+    print(f"   - Saída salva em: {output_dir}")
 
 if __name__ == "__main__":
     main()
