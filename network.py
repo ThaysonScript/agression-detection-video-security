@@ -1,11 +1,18 @@
+import torch
 import torch.nn as nn
 
-class ViolenceRNN(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers=1, rnn_type='LSTM'):
+class ClassificadorRNN(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, tipo='LSTM'):
         super().__init__()
-        self.rnn = getattr(nn, rnn_type)(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, 2)
+        if tipo == 'RNN':
+            self.rnn = nn.RNN(input_dim, hidden_dim, batch_first=True)
+        elif tipo == 'GRU':
+            self.rnn = nn.GRU(input_dim, hidden_dim, batch_first=True)
+        else:
+            self.rnn = nn.LSTM(input_dim, hidden_dim, batch_first=True)
+
+        self.fc = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x):
-        _, (hn, _) = self.rnn(x)
-        return self.fc(hn[-1])
+        out, _ = self.rnn(x)
+        return self.fc(out[:, -1, :])  # usa o último timestep
