@@ -30,3 +30,12 @@ def treinar_modelo(model, X_train, y_train, X_val, y_val, epochs=20, lr=1e-3):
         print(f"Epoch {epoch+1}: Val Acc = {correct / total:.2%}")
 
     return model
+
+
+def avaliar_modelo(model, X_test, y_test):
+    model.eval()
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    with torch.no_grad():
+        inputs = torch.tensor(X_test).float().to(device)
+        outputs = model(inputs).argmax(dim=1).cpu().numpy()
+        print(classification_report(y_test, outputs, target_names=['abuse', 'assault', 'fighting', 'normal']))
